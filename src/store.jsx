@@ -1,4 +1,5 @@
-import { createContext, useContext, useReducer } from 'react';
+import { createContext, useContext, useReducer, useEffect } from 'react';
+import { isApiConfigured, fetchRecords, addRecord, deleteRecord } from './api';
 
 const StoreContext = createContext();
 
@@ -179,17 +180,28 @@ const SAMPLE_DATA = [
 ];
 
 const initialState = {
-  records: SAMPLE_DATA,
+  records: [],
   categories: CATEGORIES,
   currentPage: 'dashboard',
   selectedCategory: null,
   toasts: [],
+  loading: true,        // API読み込み中フラグ
+  syncing: false,        // API書き込み中フラグ
+  apiConnected: false,   // API接続状態
 };
 
 function reducer(state, action) {
   switch (action.type) {
+    case 'SET_RECORDS':
+      return { ...state, records: action.payload, loading: false, apiConnected: true };
+    case 'SET_LOADING':
+      return { ...state, loading: action.payload };
+    case 'SET_SYNCING':
+      return { ...state, syncing: action.payload };
+    case 'INIT_LOCAL':
+      return { ...state, records: SAMPLE_DATA, loading: false, apiConnected: false };
     case 'ADD_RECORD':
-      return { ...state, records: [...state.records, { ...action.payload, id: String(Date.now()) }] };
+      return { ...state, records: [...state.records, { ...action.payload, id: action.payload.id || String(Date.now()) }] };
     case 'DELETE_RECORD':
       return { ...state, records: state.records.filter(r => r.id !== action.payload) };
     case 'SET_PAGE':
@@ -205,8 +217,66 @@ function reducer(state, action) {
   }
 }
 
+/**
+ * API連携付きdispatchラッパー
+ * ADD_RECORD / DELETE_RECORD 時にAPIにも同期する
+ */
+function createApiDispatch(rawDispatch) {
+  return async (action) => {
+    // まずローカル状態を即座に更新（楽観的更新）
+    rawDispatch(action);
+
+    // APIが未設定ならローカルのみ
+    if (!isApiConfigured()) return;
+
+    // API同期
+    if (action.type === 'ADD_RECORD') {
+      rawDispatch({ type: 'SET_SYNCING', payload: true });
+      const success = await addRecord(action.payload);
+      rawDispatch({ type: 'SET_SYNCING', payload: false });
+      if (!success) {
+        rawDispatch({ type: 'ADD_TOAST', payload: { type: 'error', message: 'スプレッドシートへの保存に失敗しました' } });
+      }
+    } else if (action.type === 'DELETE_RECORD') {
+      rawDispatch({ type: 'SET_SYNCING', payload: true });
+      const success = await deleteRecord(action.payload);
+      rawDispatch({ type: 'SET_SYNCING', payload: false });
+      if (!success) {
+        rawDispatch({ type: 'ADD_TOAST', payload: { type: 'error', message: 'スプレッドシートからの削除に失敗しました' } });
+      }
+    }
+  };
+}
+
 export function StoreProvider({ children }) {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, rawDispatch] = useReducer(reducer, initialState);
+  const dispatch = createApiDispatch(rawDispatch);
+
+  // 起動時にAPIからデータを取得
+  useEffect(() => {
+    async function loadData() {
+      if (!isApiConfigured()) {
+        // API未設定 → サンプルデータで動作
+        rawDispatch({ type: 'INIT_LOCAL' });
+        return;
+      }
+
+      try {
+        const records = await fetchRecords();
+        if (records) {
+          rawDispatch({ type: 'SET_RECORDS', payload: records });
+        } else {
+          // API取得失敗 → サンプルデータにフォールバック
+          rawDispatch({ type: 'INIT_LOCAL' });
+        }
+      } catch (err) {
+        console.error('データ読み込みエラー:', err);
+        rawDispatch({ type: 'INIT_LOCAL' });
+      }
+    }
+    loadData();
+  }, []);
+
   return (
     <StoreContext.Provider value={{ state, dispatch }}>
       {children}

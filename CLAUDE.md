@@ -7,6 +7,7 @@
 - React + Vite
 - pdfjs-dist（PDF解析）
 - xlsx / SheetJS（Excel出力）
+- Google Apps Script + スプレッドシート（データ永続化API）
 - CSS アニメーション（カウントアップ、フェードイン、スライドイン、チャートグロウ、プログレスバー、パルス等）
 
 ## 最新実装状況（2026-04-02 完成 → ブランドカラー更新）
@@ -21,12 +22,37 @@
 - ✅ レスポンシブ: PC(5カラム) / タブレット(2カラム) / スマホ(1カラム) + サイドバー開閉
 - ✅ プレビューパネル検証完了、ビルドエラーなし、コンソールエラーなし
 
+## データ永続化（Google スプレッドシート連携）
+
+### 仕組み
+- Google Apps Script をWebAPI化し、スプレッドシートをデータベースとして使用
+- React アプリ起動時にAPIからデータ取得、追加・削除時に自動同期（楽観的更新）
+- API未設定時はローカルモード（サンプルデータ、メモリのみ）で動作
+
+### セットアップ手順
+1. Google スプレッドシートを新規作成
+2. 「拡張機能」→「Apps Script」を開く
+3. `gas/Code.gs` のコードを貼り付け
+4. `SPREADSHEET_ID` を自分のスプレッドシートIDに変更
+5. GAS上部で `setup` 関数を実行（シート・ヘッダー自動作成）
+6. 「デプロイ」→「新しいデプロイ」→ ウェブアプリ（アクセス: 全員）
+7. デプロイURLを `src/api.js` の `GAS_URL` に設定
+8. `npm run build` → デプロイ
+
+### ファイル構成
+- `gas/Code.gs` - GAS WebAPI（doGet/doPost）
+- `src/api.js` - GAS APIとの通信ユーティリティ
+- `src/store.jsx` - API連携付き状態管理（楽観的更新）
+
 ## ディレクトリ構成
 ```
+gas/
+  Code.gs           - Google Apps Script WebAPI
 src/
   main.jsx          - エントリポイント
-  App.jsx           - メインレイアウト（サイドバー + ページルーティング）
-  store.jsx         - Context + useReducer による状態管理
+  App.jsx           - メインレイアウト（サイドバー + ページルーティング + ローディング/同期UI）
+  store.jsx         - Context + useReducer + GAS API連携による状態管理
+  api.js            - Google Apps Script API通信ユーティリティ
   utils.js          - フォーマット、エクスポート、PDF解析ユーティリティ
   hooks.js          - useAnimatedNumber, useInView カスタムフック
   index.css         - グローバルスタイル + アニメーション + レスポンシブ
