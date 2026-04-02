@@ -1,0 +1,1 @@
+var e=`/clh-sales-dashboard/assets/pdf.worker.min-FHbmGBN0.mjs`;export{e as default};
