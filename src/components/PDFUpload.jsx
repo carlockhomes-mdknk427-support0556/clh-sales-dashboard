@@ -180,7 +180,10 @@ async function parsePDFFile(file) {
     const c = await pg.getTextContent();
     text += c.items.map(it => it.str).join(' ') + '\n';
   }
-  return parsePDFText(text);
+  console.log('=== PDF抽出テキスト ===\n', text);
+  const result = parsePDFText(text);
+  result._rawText = text; // デバッグ用に生テキストを保持
+  return result;
 }
 
 /* ══════════ MAIN COMPONENT ══════════ */
@@ -278,14 +281,16 @@ export default function PDFUpload() {
     }
     let count = 0;
     for (const b of valid) {
-      const d = b.data;
-      if (!d.date || !d.client || !d.total) continue;
+      const d = { ...b.data };
+      delete d._rawText; // 生テキストは保存しない
+      // 日付が空なら今日の日付をセット
+      if (!d.date) d.date = new Date().toISOString().split('T')[0];
       dispatch({
         type: 'ADD_RECORD',
         payload: {
           ...d,
           items: d.items?.length > 0 ? d.items : [
-            { description: d.subject || '作業一式', qty: 1, unit: '式', unitPrice: d.subtotal, amount: d.subtotal }
+            { description: d.subject || '作業一式', qty: 1, unit: '式', unitPrice: d.subtotal || 0, amount: d.subtotal || 0 }
           ],
         },
       });
