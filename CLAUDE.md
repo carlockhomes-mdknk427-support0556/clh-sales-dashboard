@@ -60,6 +60,11 @@ npm run build  # dist/ に出力
 rm -rf docs && mv dist docs && git push  # GitHub Pages
 ```
 
+**GitHub Pages デプロイ完了（2026-04-02）:**
+- ✅ GitHub Pages 有効化済み
+- ✅ vite.config.js の base パスを `/clh-sales-dashboard/` に設定
+- ✅ 公開URL: https://carlockhomes-mdknk427-support0556.github.io/clh-sales-dashboard/
+
 ## 詳細な実装内容
 
 ### ダッシュボード
