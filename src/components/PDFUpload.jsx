@@ -174,15 +174,67 @@ async function parsePDFFile(file) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl.default;
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+
+  console.log(`=== PDF情報: ${file.name} ===`);
+  console.log(`ページ数: ${pdf.numPages}`);
+
   let text = '';
   for (let i = 1; i <= pdf.numPages; i++) {
     const pg = await pdf.getPage(i);
     const c = await pg.getTextContent();
-    text += c.items.map(it => it.str).join(' ') + '\n';
+
+    // デバッグ: テキストアイテムの詳細
+    console.log(`--- ページ${i}: ${c.items.length}個のテキストアイテム ---`);
+    if (c.items.length > 0) {
+      console.log('最初の10アイテム:', c.items.slice(0, 10).map(it => ({
+        str: it.str,
+        fontName: it.fontName,
+        width: it.width,
+        hasEOL: it.hasEOL,
+      })));
+    }
+
+    // テキスト抽出（空文字以外）
+    const pageText = c.items.map(it => it.str).filter(s => s.trim()).join(' ');
+    text += pageText + '\n';
+
+    // アノテーション（フォームフィールド等）からもテキスト取得を試みる
+    try {
+      const annots = await pg.getAnnotations();
+      if (annots.length > 0) {
+        console.log(`ページ${i} アノテーション: ${annots.length}個`);
+        for (const a of annots) {
+          if (a.fieldValue) {
+            text += ' ' + a.fieldValue;
+            console.log(`フォームフィールド: ${a.fieldName} = ${a.fieldValue}`);
+          }
+          if (a.contentsObj?.str) text += ' ' + a.contentsObj.str;
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    // OperatorList から画像の有無を確認
+    try {
+      const ops = await pg.getOperatorList();
+      const imgCount = ops.fnArray.filter(fn => fn === pdfjsLib.OPS?.paintImageXObject || fn === 82).length;
+      if (imgCount > 0) console.log(`ページ${i}: ${imgCount}個の画像を検出（画像ベースPDFの可能性）`);
+    } catch (e) { /* ignore */ }
   }
-  console.log('=== PDF抽出テキスト ===\n', text);
+
+  console.log('=== 最終抽出テキスト ===\n', text || '（空）');
+
   const result = parsePDFText(text);
-  result._rawText = text; // デバッグ用に生テキストを保持
+  result._rawText = text;
+  // ファイル名から情報を推測
+  if (!result.subject) {
+    // ファイル名パターン: "282405T181　杉並区永福町３丁目計画.pdf"
+    const fnMatch = file.name.replace(/\.pdf$/i, '').match(/(?:\d{6}T\d{3})?[　\s]*(.+)/);
+    if (fnMatch) result.subject = fnMatch[1];
+  }
+  if (!result.docNumber) {
+    const fnNum = file.name.match(/(\d{6}T\d{3})/);
+    if (fnNum) result.docNumber = fnNum[1];
+  }
   return result;
 }
 
